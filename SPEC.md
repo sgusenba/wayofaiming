@@ -76,7 +76,7 @@ USB webcam ──audio──▶ │  capture → target tracking   │◀──�
 - The UI is a web page served by the backend. It opens in a browser on the same PC and can also be opened from a tablet on the same network.
 - Live data (aim position, state, shot events) is pushed to the UI over a streaming connection (e.g. WebSocket).
 - Everything runs offline. No data leaves the machine.
-- The implementation language is left open; this document specifies behaviour and interfaces only.
+- The backend is written entirely in Rust: capture, tracking, shot detection, metrics, storage and the web server. It ships as a single program with the browser UI files built in; no other runtime has to be installed.
 
 ## 5. Shot lifecycle
 
