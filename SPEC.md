@@ -1,8 +1,8 @@
-# Way of Aiming — Specification (Draft 1)
+# Way of Aiming — Specification (Draft 2)
 
 A training aid that records how a 10 m air rifle moves on the target while aiming, detects the shot by sound, and shows the aim trace, the estimated shot position and stability metrics.
 
-Status: draft for review. Items marked **[open]** still need a decision.
+Status: draft 2 for review. Items marked **[open]** still need a decision.
 
 ## 1. Goals and scope
 
@@ -95,7 +95,7 @@ IDLE ──target found──▶ AIMING ──shot detected──▶ FOLLOW-THRO
 
 Rules:
 - If the target is lost for less than 2 s during AIMING, the trace gets a gap and the attempt continues.
-- If the target is lost for more than 2 s without a shot, the attempt is discarded. A setting allows keeping these as "aborted holds".
+- If the target is lost for more than 2 s without a shot, the attempt is discarded by default. A setting allows keeping these as "aborted holds".
 - A sound that is detected as a shot while the target is not in view is ignored.
 - After a shot, a new attempt can only begin once FOLLOW-THROUGH has ended.
 - The trace is kept for the whole aim regardless of length. Debug video is capped at 120 s per shot (oldest part dropped, pre-roll kept).
@@ -108,7 +108,7 @@ Input: one video frame. Output: aim position in mm, plus a confidence value.
 2. Compute its centre with sub-pixel precision (e.g. edge-based ellipse fit) and its diameter in pixels.
 3. Scale: `mm per pixel = aiming mark diameter in mm / measured diameter in px`. The aiming mark diameter comes from the target profile (30.5 mm for ISSF paper; configurable for electronic targets whose visible mark differs).
 4. The aim position is where the optical axis reference point (image centre plus calibration offset) falls on the target plane, expressed relative to the target centre.
-5. Camera roll (rifle cant or a tilted mount) is corrected with a configurable roll angle per rifle profile. **[open]** Whether to estimate roll automatically from the target frame edges.
+5. Camera roll (rifle cant or a tilted mount) is estimated automatically in every frame and corrected. The round aiming mark carries no roll information, so the estimate comes from straight edges around it: the edges of the paper card or the frame of the electronic target. A fixed mount roll per rifle profile is set once in a setup step (rifle held level) and subtracted, so that what remains is the cant of the rifle. If no usable edges are visible, the last good estimate is used and the samples are flagged as cant-unknown.
 
 Requirements:
 - Position noise with the rifle clamped still: 0.1 mm RMS or better.
@@ -138,7 +138,7 @@ The shot instant is taken from the audio. Because the microphone sits on the rif
 - Audio and video are timestamped on a common clock at capture.
 - A configurable audio-video offset (per camera, default 0 ms) compensates for device latency. A calibration helper estimates it from the image jolt of a few live shots.
 - The aim position at the shot instant is interpolated between the neighbouring frames.
-- A configurable "shot delay" (default 0 ms) models the time between sound onset and the pellet leaving the barrel. **[open]** Sensible default per rifle type.
+- A "shot delay" models the time between sound onset and the pellet leaving the barrel. Default 0 ms, adjustable per rifle profile.
 
 ## 8. Calibration
 
@@ -166,6 +166,7 @@ Per shot (calculated on calibrated, high-confidence samples):
 | Release deviation | Distance between the mean aim position 0.6–0.2 s before the shot and the shot position (mm) — shows trigger errors |
 | Hold centre offset | Distance and direction of the mean aim position in the last 1.0 s from the target centre |
 | Follow-through | Largest displacement in the 0.5 s after the shot (mm) |
+| Cant | Rifle cant angle at the shot instant, and its spread during the last 1.0 s (degrees) |
 
 Per session: number of shots, total and average score, group centre and group size (largest centre-to-centre distance), averages and trends of the per-shot metrics.
 
@@ -173,7 +174,7 @@ The time windows are configurable.
 
 ## 10. User interface
 
-Language of the UI: **[open]** (English, German, both).
+The UI is in English.
 
 | View | Content |
 |---|---|
@@ -209,7 +210,7 @@ Possibilities, in order of effort:
 3. **Live feed**: receive each shot from the target system as it happens; automatic continuous calibration, and the real hit shown in the shot view immediately.
 4. **Shot trigger**: use the target system's shot event as an additional confirmation of the own shot in strict detection mode.
 
-**[open]** Which target system(s) to support first (Meyton, SIUS, Disag, other) and which interfaces they offer.
+Meyton is the first system to support. **[open]** Which interfaces Meyton offers for reading shot data (to be investigated when this work starts).
 
 ## 13. Non-functional requirements
 
@@ -243,9 +244,6 @@ Possibilities, in order of effort:
 
 ## 16. Open questions
 
-- UI language(s).
-- Automatic roll (cant) estimation, and whether cant should be shown as a metric.
-- Default shot delay between sound onset and pellet exit.
 - Exact camera and lens model, to confirm field of view and frame rate.
-- Which electronic target systems to integrate first.
-- Whether aborted holds (target acquired, no shot) are worth keeping by default.
+- Which interfaces the Meyton system offers for reading shot data (later, with section 12).
+- Whether the target surroundings always show enough straight edges for automatic cant estimation, on paper and on Meyton targets (to be checked with real camera images).
