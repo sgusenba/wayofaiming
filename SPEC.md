@@ -50,6 +50,21 @@ Reasoning: the 30.5 mm black mark has to be large enough for sub-pixel centre fi
 
 The mount must be rigid: any movement of the camera relative to the barrel shifts the calibration.
 
+### Camera in use
+
+Sonix-based UVC camera (USB ID `0C45:6340`) with tele / zoom lens. Modes reported by Windows:
+
+| Resolution | Frame rate |
+|---|---|
+| 1280×720 (16:9), 960×720 (4:3) and smaller | about 30 fps |
+| 352×288, 320×240, 160×120 | 60 fps |
+
+Consequences:
+- Default capture mode is 1280×720 at 30 fps. With a 300 mm field of view this gives about 0.23 mm per pixel and an aiming mark of about 130 px, well above the preferred size.
+- 30 fps meets the minimum. Samples are 33 ms apart; the position at the shot instant is interpolated (section 7).
+- The 60 fps modes are too coarse at a 300 mm field of view (aiming mark about 36 px at 352×288). They are offered as an experimental option for use with a narrower field of view.
+- The capture mode (resolution and frame rate) is selectable in the settings, and the mode used is stored with each session.
+
 ## 3. Reference geometry (ISSF 10 m air rifle target)
 
 - Ring 10: 0.5 mm diameter. Each lower ring adds 5.0 mm diameter (ring 1 = 45.5 mm).
@@ -244,6 +259,7 @@ Meyton is the first system to support. **[open]** Which interfaces Meyton offers
 
 ## 16. Open questions
 
-- Exact camera and lens model, to confirm field of view and frame rate.
+- Lens focal length / zoom setting and the resulting field of view at 10 m.
+- Whether the camera offers further modes (e.g. compressed 720p at 60 fps) that Windows does not list; to be checked with a full mode listing.
 - Which interfaces the Meyton system offers for reading shot data (later, with section 12).
 - Whether the target surroundings always show enough straight edges for automatic cant estimation, on paper and on Meyton targets (to be checked with real camera images).
