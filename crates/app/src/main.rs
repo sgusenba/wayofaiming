@@ -1,27 +1,31 @@
 //! wayofaiming: webcam-based shooting trainer.
 //!
 //! Threads:
-//! - camera thread: frames -> aiming-mark detection -> aim point (mm)
+//! - camera thread: frames -> aiming-mark detection -> aim point
 //! - audio callback: microphone -> shot detection -> shot time
-//! - UI thread: merges both into a [`Session`] and draws it
+//! - UI thread: merges both into a session, draws it, saves it
 //!
 //! All timestamps use [`clock::now`] so audio and video can be aligned.
+
+// No console window for the Windows release build.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod audio;
 mod camera;
 mod clock;
 mod ui;
 
-use std::sync::mpsc;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use wayofaiming_core::detect::MarkDetection;
-use wayofaiming_core::session::{Session, SessionConfig};
+use wayofaiming_core::storage;
 use wayofaiming_core::target::TargetSpec;
 
 /// Messages from the capture threads to the UI.
 pub enum Event {
+    /// Aim point in units of the black's radius (y up); the UI converts to mm.
     Frame { t: f64, aim: Option<[f64; 2]>, mark: Option<MarkDetection> },
     Preview { width: usize, height: usize, gray: Vec<u8> },
     Shot { t: f64 },
@@ -35,12 +39,14 @@ enum Target {
     Pistol,
 }
 
+/// All options except the capture format are remembered between runs and
+/// can also be changed in the window.
 #[derive(Parser)]
 #[command(version, about = "Webcam-based shooting trainer")]
 struct Args {
     /// Camera index (see --list-cameras).
-    #[arg(long, default_value_t = 0)]
-    camera: u32,
+    #[arg(long)]
+    camera: Option<u32>,
     /// Requested capture width (use with --height and --fps).
     #[arg(long, requires_all = ["height", "fps"])]
     width: Option<u32>,
@@ -49,20 +55,23 @@ struct Args {
     #[arg(long, requires_all = ["width", "height"])]
     fps: Option<u32>,
     /// Target type.
-    #[arg(long, value_enum, default_value_t = Target::Rifle)]
-    target: Target,
-    /// Part of the microphone name to use instead of the default input.
+    #[arg(long, value_enum)]
+    target: Option<Target>,
+    /// Microphone name (or part of it) instead of the system default.
     #[arg(long)]
     mic: Option<String>,
     /// Shot detection level, 0..1 of full scale.
-    #[arg(long, default_value_t = 0.25)]
-    threshold: f32,
+    #[arg(long)]
+    threshold: Option<f32>,
     /// Delay from frame exposure to arrival in ms (aligns video with audio).
-    #[arg(long, default_value_t = 50.0)]
-    video_latency: f64,
+    #[arg(long)]
+    video_latency: Option<f64>,
     /// Run with a synthetic camera and shots (no hardware needed).
     #[arg(long)]
     demo: bool,
+    /// Where sessions and settings are stored.
+    #[arg(long)]
+    data_dir: Option<PathBuf>,
     /// List cameras and exit.
     #[arg(long)]
     list_cameras: bool,
@@ -71,67 +80,73 @@ struct Args {
     list_mics: bool,
 }
 
+/// The release build has no console; reattach to the one we were started
+/// from (if any) so --help and --list-* still print.
+fn attach_console() {
+    #[cfg(windows)]
+    // SAFETY: plain Win32 call without pointers; failure just means no console.
+    unsafe {
+        windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
+    }
+}
+
 fn main() -> Result<()> {
+    attach_console();
     clock::init();
     let args = Args::parse();
     if args.list_cameras || args.list_mics {
         if args.list_cameras {
-            camera::list()?;
+            println!("Cameras:");
+            for (i, name) in camera::available() {
+                println!("  {i}: {name}");
+            }
         }
         if args.list_mics {
-            audio::list()?;
+            println!("Microphones:");
+            for name in audio::available() {
+                println!("  {name}");
+            }
         }
         return Ok(());
     }
 
-    let spec = match args.target {
-        Target::Rifle => TargetSpec::AIR_RIFLE_10M,
-        Target::Pistol => TargetSpec::AIR_PISTOL_10M,
+    let data_dir = args
+        .data_dir
+        .or_else(|| dirs::data_dir().map(|d| d.join("wayofaiming")))
+        .unwrap_or_else(|| PathBuf::from("wayofaiming-data"));
+    let mut settings = storage::load_settings(&data_dir.join("settings.json"));
+    if let Some(c) = args.camera {
+        settings.camera = c;
+    }
+    if let Some(t) = args.target {
+        settings.target = match t {
+            Target::Rifle => TargetSpec::AIR_RIFLE_10M.name,
+            Target::Pistol => TargetSpec::AIR_PISTOL_10M.name,
+        }
+        .to_string();
+    }
+    if args.mic.is_some() {
+        settings.mic = args.mic;
+    }
+    if let Some(t) = args.threshold {
+        settings.shot_threshold = t;
+    }
+    if let Some(ms) = args.video_latency {
+        settings.video_latency = ms / 1000.0;
+    }
+    let options = ui::AppOptions {
+        data_dir,
+        demo: args.demo,
+        camera_format: args.width.zip(args.height).zip(args.fps).map(|((w, h), f)| (w, h, f)),
     };
-    let session = Session::new(
-        spec.clone(),
-        SessionConfig { video_latency: args.video_latency / 1000.0, ..Default::default() },
-    );
-    let threshold = audio::SharedThreshold::new(args.threshold);
-    let format = args.width.zip(args.height).zip(args.fps).map(|((w, h), f)| (w, h, f));
 
     eframe::run_native(
         "wayofaiming",
         eframe::NativeOptions {
-            viewport: eframe::egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
+            viewport: eframe::egui::ViewportBuilder::default().with_inner_size([1250.0, 820.0]).with_title("wayofaiming"),
             ..Default::default()
         },
-        Box::new(move |cc| {
-            let (tx, rx) = mpsc::channel();
-            let ctx = cc.egui_ctx.clone();
-            if args.demo {
-                camera::spawn_demo(spec, tx, move || ctx.request_repaint());
-                return Ok(Box::new(AppWithAudio { app: ui::App::new(rx, session, threshold), _stream: None }));
-            }
-            camera::spawn(camera::CameraSettings { index: args.camera, format, spec }, tx.clone(), move || ctx.request_repaint());
-
-            let ctx = cc.egui_ctx.clone();
-            let stream = match audio::start(args.mic.as_deref(), threshold.clone(), tx.clone(), move || ctx.request_repaint()) {
-                Ok(s) => Some(s),
-                Err(e) => {
-                    let _ = tx.send(Event::Status(format!("Microphone error: {e:#}")));
-                    None
-                }
-            };
-            Ok(Box::new(AppWithAudio { app: ui::App::new(rx, session, threshold), _stream: stream }))
-        }),
+        Box::new(move |cc| Ok(Box::new(ui::App::new(cc.egui_ctx.clone(), options, settings)))),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))
-}
-
-/// Keeps the audio stream alive as long as the window.
-struct AppWithAudio {
-    app: ui::App,
-    _stream: Option<cpal::Stream>,
-}
-
-impl eframe::App for AppWithAudio {
-    fn ui(&mut self, ui: &mut eframe::egui::Ui, frame: &mut eframe::Frame) {
-        self.app.ui(ui, frame);
-    }
 }

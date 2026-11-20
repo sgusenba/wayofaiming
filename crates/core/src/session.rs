@@ -9,10 +9,12 @@
 
 use std::collections::VecDeque;
 
+use serde::{Deserialize, Serialize};
+
 use crate::target::TargetSpec;
 
 /// Aim point at one camera frame. `pos` is `None` when the mark was not found.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct AimSample {
     pub t: f64,
     pub pos: Option<[f64; 2]>,
@@ -38,7 +40,7 @@ impl Default for SessionConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Shot {
     pub number: usize,
     pub t: f64,
@@ -181,6 +183,11 @@ impl Session {
         let mean = pts.iter().fold([0.0, 0.0], |a, p| [a[0] + p[0] / k, a[1] + p[1] / k]);
         self.offset = [-mean[0], -mean[1]];
         true
+    }
+
+    /// Session holding already finished shots, e.g. loaded from disk.
+    pub fn from_shots(spec: TargetSpec, config: SessionConfig, offset: [f64; 2], shots: Vec<Shot>) -> Self {
+        Self { spec, config, offset, shots, ..Default::default() }
     }
 
     /// Removes all shots and the trace; keeps calibration.

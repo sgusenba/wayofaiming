@@ -29,12 +29,12 @@ impl SharedThreshold {
     }
 }
 
-pub fn list() -> Result<()> {
+/// Names of the available microphones.
+pub fn available() -> Vec<String> {
     let host = cpal::default_host();
-    for d in host.input_devices().context("listing input devices")? {
-        println!("{}", d.description().map(|d| d.name().to_string()).unwrap_or_else(|_| "<unknown>".into()));
-    }
-    Ok(())
+    host.input_devices()
+        .map(|devs| devs.filter_map(|d| d.description().ok().map(|n| n.name().to_string())).collect())
+        .unwrap_or_default()
 }
 
 /// Starts capturing. Keep the returned stream alive for as long as audio is needed.

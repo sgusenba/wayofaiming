@@ -178,13 +178,19 @@ pub fn find_mark(img: &GrayImage, cfg: &DetectorConfig) -> Option<MarkDetection>
     })
 }
 
-/// Converts a detection into the aim point on the target (mm, y up),
-/// assuming the aim point is the image centre.
-pub fn aim_point_mm(det: &MarkDetection, width: usize, height: usize, spec: &TargetSpec) -> [f64; 2] {
-    let mm_per_px = spec.black_radius / det.radius;
+/// Aim point relative to the mark centre in units of the mark's radius
+/// (y up), assuming the aim point is the image centre. Independent of the
+/// target type; multiply by [`TargetSpec::black_radius`] for millimetres.
+pub fn aim_point_radii(det: &MarkDetection, width: usize, height: usize) -> [f64; 2] {
     let cx = width as f64 / 2.0;
     let cy = height as f64 / 2.0;
-    [(cx - det.center[0]) * mm_per_px, (det.center[1] - cy) * mm_per_px]
+    [(cx - det.center[0]) / det.radius, (det.center[1] - cy) / det.radius]
+}
+
+/// Converts a detection into the aim point on the target (mm, y up).
+pub fn aim_point_mm(det: &MarkDetection, width: usize, height: usize, spec: &TargetSpec) -> [f64; 2] {
+    let r = aim_point_radii(det, width, height);
+    [r[0] * spec.black_radius, r[1] * spec.black_radius]
 }
 
 #[cfg(test)]

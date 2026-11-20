@@ -5,8 +5,10 @@
 //! - [`shot`]: detect shots in microphone samples.
 //! - [`session`]: merge aim trace and shots into scored shots with metrics.
 //! - [`target`]: target geometry and decimal scoring.
+//! - [`storage`]: saving and loading sessions and settings as JSON.
 
 pub mod detect;
 pub mod session;
 pub mod shot;
+pub mod storage;
 pub mod target;

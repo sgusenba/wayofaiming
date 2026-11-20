@@ -40,6 +40,14 @@ impl TargetSpec {
         calibre: 4.5,
     };
 
+    /// All built-in targets.
+    pub const ALL: [TargetSpec; 2] = [Self::AIR_RIFLE_10M, Self::AIR_PISTOL_10M];
+
+    /// Looks up a built-in target by its [`TargetSpec::name`].
+    pub fn by_name(name: &str) -> Option<TargetSpec> {
+        Self::ALL.into_iter().find(|t| t.name == name)
+    }
+
     /// Outer radius of ring `n` (1..=10) in mm.
     pub fn ring_radius(&self, n: u8) -> f64 {
         self.ring10_radius + f64::from(10 - n.clamp(1, 10)) * self.ring_step
